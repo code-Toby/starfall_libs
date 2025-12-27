@@ -1,0 +1,55 @@
+--@name particle
+--@author {toby}
+--@shared
+
+function CreatePart(partData, parent, SCALE)    
+    if CLIENT then
+        if partData == nil then return end
+        if partData['3D'] == nil then return end
+        
+        local ParticleEmitter = particle.create(Vector(0,0,0), partData['3D'])
+        
+        local Material = ''
+        
+        if string.startsWith(partData['Material'], 'http') then -- TEMP CODE
+            Material = material.load('sprites/player_red_dead_offscreen')
+        end -- temp code end
+        
+        local Data = {
+            ['Parent'] = parent,
+            ['Data'] = {
+                    ['Name']=partData['Name'],
+                    ['Material'] = material.load(partData['Material']),
+                    ['Color1']=partData['Color1'],
+                    ['Color2']=partData['Color2'],
+                    ['Lighting']= partData['Lighting'],
+                    ['StartAlpha']=partData['StartAlpha'],
+                    ['EndAlpha']=partData['EndAlpha'],
+                    
+                    ['StartSize']=partData['StartSize'],
+                    ['EndSize']=partData['EndSize'],
+                    ['StartLength']=partData['StartLength'],
+                    ['EndLength']=partData['EndLength'],
+                    
+                    ['Position']=partData['Position'],
+                    ['PositionSpread'] = partData['PositionSpread'],
+                    ['PositionOffset'] = partData['PositionOffset'],
+                    ['Gravity']=partData['Gravity'],
+                    ['Angles']=partData['Angles'],
+                    
+                    ['NumberParticles']=partData['NumberParticles'],
+                    ['DieTime']=partData['DieTime'],
+                    ['FireDelay']=partData['FireDelay'],
+                    ['Velocity']=partData['Velocity'],
+                    ['AirResistance']=partData['AirResistance']
+                         
+                },
+            ['SCALE']=SCALE,
+            ['ParticleEmitter'] = ParticleEmitter  
+        }
+        
+        table.insert(PAC_LOADER.CREATED_PARTICLES, Data)
+    end
+end
+
+return {['Create']=CreatePart}

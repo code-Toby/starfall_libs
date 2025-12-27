@@ -1,0 +1,23 @@
+--@name bone
+--@author {toby}
+--@shared
+
+function CreateBonePart(partData, parent)
+    local Bone_name = partData['Bone']
+    
+    local Pos = partData['Position']
+    local Ang = partData['Angles']
+    local size = partData['Scale'] * partData['Size'] 
+    
+    local BONEID = PAC_FUNCS.GET_BONEID(parent, Bone_name)
+    
+    
+    parent:manipulateBonePosition(BONEID, Pos)
+    parent:manipulateBoneAngles(BONEID, Ang)
+    parent:manipulateBoneScale(BONEID, size)
+    --parent:manipulateBonePosition(BONEID, Pos)
+end
+
+
+
+return {['Create']=CreateBonePart}

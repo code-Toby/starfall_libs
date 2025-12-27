@@ -1,0 +1,10 @@
+--@name clip
+--@author {toby}
+--@shared
+
+function CreatePart(partData, parent, SCALE)
+    parent:setClip(PAC_LOADER.CLIPIDS, true, partData['Position'] * SCALE, partData['Angles']:getForward(), parent)
+    PAC_LOADER.CLIPIDS = PAC_LOADER.CLIPIDS + 1
+end
+
+return {['Create']=CreatePart}

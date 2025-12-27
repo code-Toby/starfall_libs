@@ -1,0 +1,107 @@
+--@name model
+--@author {toby}
+--@shared
+
+
+local function handle_flags(data)
+    local flags = {}
+    
+    if data['NoCulling'] then
+        flags['$nocull'] = 8192
+    end
+    
+    if data['NoTextureFiltering'] then
+        flags['$smooth'] = 0  
+    end
+    return flags
+end
+
+function CreatePart(partData, parent, SCALE)
+    local part = nil
+    local size = (partData['Scale'] * partData['Size']) * SCALE
+    local model = partData['Model']
+    local NAME = partData['Name']
+    local ID = partData['UniqueID']
+    local SKIN = partData['Skin']
+    local BONE = partData['Bone']
+    local LOD = partData['LevelOfDetail']
+
+    local BONEID = PAC_FUNCS.GET_BONEID(parent, BONE)
+
+    local pos = (partData['Position'] * SCALE)
+    local ang = (partData['Angles']) 
+
+    local Material = partData['Material']
+    
+    local R = partData['Color'][1] * 255
+    local G = partData['Color'][2] * 255
+    local B = partData['Color'][3] * 255
+    
+    if partData['ClassName'] == 'model' then
+        R = partData['Color'][1]
+        G = partData['Color'][2]
+        B = partData['Color'][3] 
+    end
+    
+    local Alpha = (partData['Alpha'] * 255)
+    local Clr = Color(R, G, B, Alpha)
+    
+    local isFullbright = partData['NoLighting']
+    local isInverted = partData['Invert']
+    
+    if string.startsWith(model, 'https:') or string.startsWith(model, 'http:') then
+        local part_model = ''
+        if game.modelExists('models/pac/default.mdl') then
+            part_model = 'models/pac/default.mdl'
+        elseif game.modelExists('models/sprops/misc/axis_plane.mdl') then
+            part_model = 'models/sprops/misc/axis_plane.mdl'
+        else
+            part_model = 'models/hunter/misc/sphere025x025.mdl' 
+        end
+        part = hologram.create(Vector(0,0,0), Angle(), part_model, size)
+        PAC_FUNCS.OBJLOADER.LoadModelToQueue(model, part)
+    else
+        part = hologram.create(pos, ang, model, size)
+    end
+    
+    part:setColor(Color(R,G,B,Alpha))
+    part:setSkin(SKIN)
+    part:setParent(parent, nil, BONEID)
+
+    part:setLocalPos(pos)
+    part:setLocalAngles(ang)
+    part.localPos = pos
+    part.localAngle = ang
+    
+    if LOD != nil then
+        if LOD > 0 then
+            timer.create(table.address(part)..'_part_lod', 0.1, 1, function()
+                net.start('part_lod')
+                    net.writeEntity(part)
+                    net.writeFloat(LOD)
+                net.send()
+            end)
+        end
+    end
+    
+    if isFullbright then
+        part:suppressEngineLighting(true)
+    end
+    
+    if isInverted then
+        part:setCullMode(1)
+    end
+    
+    local final_material_value = part:getMaterials()
+    if Material != '' then
+        final_material_value = Material
+        
+        part:setMaterial(final_material_value)
+    end
+    
+    local material_flags = handle_flags(partData, final_material_value)
+    table.insert(PAC_LOADER.HOLOGRAMS, {['name']=NAME, ['id']=ID, ['part']=part})
+    return {part, material_flags, final_material_value}
+end
+
+return {['Create']=CreatePart}

@@ -1,0 +1,208 @@
+--@name func_handle_materials
+--@author {toby}
+--@shared
+
+function MaterialLayout(mtl, url, width, height, layout)
+    if not width or not height then
+        if isValid(mtl) then
+                mtl:setTexture("$basetexture", "hunter/myplastic")
+        end
+        
+        print("Invalid texture URL")
+        return
+    end
+                
+    local xScale = 1024 / width
+    local yScale = 1024 / height
+    layout(0, 0, width * xScale, height * yScale, true)
+end
+
+function CompareTables(tbl1, tbl2)
+    for k, v in pairs(tbl1) do
+        if tbl2[k] != v then
+            return false 
+        end
+    end
+    
+    if table.isEmpty(tbl1) and table.isEmpty(tbl2) then
+        return true 
+    end
+    
+    if table.isEmpty(tbl1) and not table.isEmpty(tbl2) then
+        return false 
+    end
+    
+    if not table.isEmpty(tbl1) and table.isEmpty(tbl2) then
+        return false 
+    end
+    
+    return true
+end
+
+function Create_normal_materials(path, data)
+    local flags = data[2]
+    local part = data[1]
+    
+    for k, v in pairs(PAC_LOADER.GLOBAL_MATERIALS) do
+        if CompareTables(v['flags'], flags) and v['texture'] == path then
+            part:setMaterial('!'..v['material']:getName())
+            for k, v in pairs(flags) do
+                --TEMP_MAT:setInt(k, v)
+                
+                if flag_ky == '$smooth' then
+                    part:setFilterMin(1)
+                    part:setFilterMag(1)
+                end
+            end            
+            return
+        end 
+    end
+    
+    local TEMP_MAT = material.create('VertexLitGeneric')
+    TEMP_MAT:setTexture('$basetexture', path)
+    for k, v in pairs(flags) do
+        TEMP_MAT:setInt(k, v)
+        
+        if flag_ky == '$smooth' then
+            part:setFilterMin(1)
+            part:setFilterMag(1)
+        end
+    end
+    part:setMaterial('!'..TEMP_MAT:getName())
+    
+    
+    local mat_data = {
+            ['material']=TEMP_MAT,
+            ['flags']=flags,
+            ['texture']=path
+        }
+    
+    table.insert(PAC_LOADER.GLOBAL_MATERIALS, mat_data)
+end
+
+function Create_url_materials(path, data)
+    local flags = data[2]
+    local part = data[1]
+    
+    for k, v in pairs(PAC_LOADER.GLOBAL_MATERIALS) do
+        if CompareTables(v['flags'], flags) and v['texture'] == path then
+            part:setMaterial('!'..v['material']:getName())
+            
+            for k, v in pairs(flags) do
+                TEMP_MAT:setInt(k, v)
+                
+                if flag_ky == '$smooth' then
+                    part:setFilterMin(1)
+                    part:setFilterMag(1)
+                end
+            end           
+            return
+        end 
+    end
+    
+    local TEMP_MAT = material.create('VertexLitGeneric')
+    TEMP_MAT:setTextureURL('$basetexture', path, MaterialLayout)
+    for k, v in pairs(flags) do
+        TEMP_MAT:setInt(k, v)
+        
+        if flag_ky == '$smooth' then
+            part:setFilterMin(1)
+            part:setFilterMag(1)
+        end
+    end
+    part:setMaterial('!'..TEMP_MAT:getName())
+    
+    
+    local mat_data = {
+            ['material']=TEMP_MAT,
+            ['flags']=flags,
+            ['texture']=path
+        }
+
+    table.insert(PAC_LOADER.GLOBAL_MATERIALS, mat_data) 
+end
+
+function Create_sub_materials(part, data)
+    local flags = data[1]
+    local sub_materials = data[2]
+    local has_savedSub = false
+    
+    for id, txt_path in pairs(sub_materials) do     
+        for k, v in pairs(PAC_LOADER.GLOBAL_MATERIALS) do
+            if CompareTables(v['flags'], flags) and v['texture'] == txt_path then
+                has_savedSub = true  
+                  
+                for flag_ky, flag_val in pairs(flags) do    
+                    if flag_ky == '$smooth' then
+                        part:setFilterMin(1)
+                        part:setFilterMag(1)
+                    end
+                end
+                
+                part:setSubMaterial(id-1, '!'..v['material']:getName())
+            end
+        end
+            if not has_savedSub then
+            local TEMP_MAT = material.create('VertexLitGeneric')
+            TEMP_MAT:setTexture('$basetexture', txt_path)
+            
+            
+            
+            for flag_ky, flag_val in pairs(flags) do
+                TEMP_MAT:setInt(flag_ky, flag_val)
+                
+                if flag_ky == '$smooth' then
+                    part:setFilterMin(1)
+                    part:setFilterMag(1)
+                end
+            end
+    
+            part:setSubMaterial(id-1, '!'..TEMP_MAT:getName())
+            local mat_data = {
+                ['material']=TEMP_MAT,
+                ['flags']=flags,
+                ['texture']=txt_path
+            }
+        
+            table.insert(PAC_LOADER.GLOBAL_MATERIALS, mat_data)
+        end
+    end
+end
+
+function HANDLE_MATERIALS()
+    if SERVER then
+        
+        for k, v in pairs(PAC_LOADER.GLOBAL_MATERIALS) do
+            net.start('send_flags_cl')
+                net.writeTable({v[2],v[3]})
+                net.writeEntity(v[1])
+            net.send()
+        end
+        
+            
+    end
+    
+    if CLIENT then
+        net.receive('send_flags_cl', function()
+            local MAT_DATA = net.readTable()
+            local PART = net.readEntity()
+            PART = PART:toHologram()
+        
+            if type(MAT_DATA[2]) == 'table' then
+                Create_sub_materials(PART, {MAT_DATA[1], MAT_DATA[2]})
+            elseif type(MAT_DATA[2]) == 'string' then
+                local path = MAT_DATA[2]
+
+                if string.startsWith(path, 'https') or string.startsWith(path, 'http') then
+                        Create_url_materials(path, {PART, MAT_DATA[1]})
+                else
+                        Create_normal_materials(path, {PART, MAT_DATA[1]})
+                end
+                    
+            end              
+        end)
+    end
+end
+
+
+return HANDLE_MATERIALS

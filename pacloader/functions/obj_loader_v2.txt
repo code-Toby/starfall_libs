@@ -1,0 +1,140 @@
+--@name obj loader v2
+--@author {toby}
+--@shared
+
+objLoader = {}
+
+objLoader.MODEL_QUEUE = {}
+objLoader.MODEL_CACHE = {}
+
+objLoader.CLIENTS = find.allPlayers()
+
+objLoader.CLIENTS_RELOAD = {}
+
+objLoader.HTTP_COUNT = 0
+
+objLoader.HandleURL = function(URL)
+    local NEW_URL = URL
+    
+    if string.startsWith(URL, 'https://www.dropbox.com/') then
+        NEW_URL = http.urlDropboxToRaw(URL)
+    elseif string.startsWith(URL, 'https://drive.google.com/') then
+        NEW_URL = http.urlGoogleDriveToRaw(URL)
+    end
+    
+    return NEW_URL
+end
+
+objLoader.LoadModelToQueue = function(Model, Entity)
+    table.insert(objLoader.MODEL_QUEUE, {objLoader.HandleURL(Model), Entity})
+end
+
+objLoader.BuildMesh = function(URL, ENTITY)
+    for _, vv in pairs(objLoader.MODEL_CACHE) do
+        if vv.key == URL then
+                                
+            ENTITY:setMesh(vv.Mesh)
+            ENTITY:setRenderBounds(Vector(-2000000000),Vector(2000000000))
+                    
+            return
+        end
+    end
+
+    local function BUILD(meshdata)
+        local MeshTables, MeshData = {}
+        local Mesh = nil            
+    
+        local LOADING_MESH = coroutine.wrap(function() 
+            MeshTables, MeshData = mesh.parseObj(meshdata, true, false)
+            return true  
+        end)
+        local LOADING_MESH_ADDR = table.address(LOADING_MESH)
+        if chip():getQuotaAverage() >= cpuMax() then coroutine.yield() end
+        
+        hook.add('think', LOADING_MESH_ADDR..'_loading_mesh', function()
+            while chip():getQuotaAverage() < cpuMax()/2 do
+                if LOADING_MESH() == true then
+                    if table.count(MeshTables) > 0 then
+                        print('SET MESH')
+                        MeshTables = table.clearKeys(MeshTables)
+                        local finished_mesh_table = {}
+                        for k, v in pairs(MeshTables) do
+                            table.add(finished_mesh_table, MeshTables[k])
+                        end
+                                                                                            
+                        Mesh = mesh.createFromTable(finished_mesh_table, false)
+                        table.insert(objLoader.MODEL_CACHE, {['key']=url, ['Mesh']=Mesh})
+                                
+                        ENTITY:setMesh(Mesh)
+                        ENTITY:setRenderBounds(Vector(-2000000000),Vector(2000000000))
+                                    
+                        hook.remove('think', LOADING_MESH_ADDR..'_loading_mesh')
+                    end
+                    hook.remove('think', LOADING_MESH_ADDR..'_loading_mesh')
+                    break
+                end
+            end
+        end)
+    end 
+
+    local function HANDLEHTTP()
+        local co = coroutine.running()
+        
+        objLoader.HTTP_COUNT = objLoader.HTTP_COUNT + 1
+        http.get(URL, function(meshdata)
+            
+            BUILD(meshdata)
+            
+            if objLoader.HTTP_COUNT >= http.getMaximumRequests() then
+                if coroutine.status(co) != 'dead' then
+                    coroutine.resume(co)
+                end
+            end
+            
+            objLoader.HTTP_COUNT = objLoader.HTTP_COUNT - 1            
+        end)
+        if objLoader.HTTP_COUNT >= http.getMaximumRequests() then
+            coroutine.yield()
+        end
+    end
+
+    HANDLEHTTP()
+end
+
+objLoader.HandleMeshes = function()
+    if SERVER then
+        net.start('objloader_handleMesh')
+            net.writeTable(objLoader.MODEL_QUEUE)
+        net.send(objLoader.CLIENTS)
+    end
+    
+    if CLIENT then
+        net.receive('objloader_handleMesh', function()
+            objLoader.MODEL_QUEUE = net.readTable()
+            coroutine.wrap(function()
+                
+                for _, v in pairs(objLoader.MODEL_QUEUE) do
+                    --if chip():getQuotaAverage() >= cpuMax() then coroutine.yield() end
+                    objLoader.BuildMesh(v[1], v[2])
+                end
+            end)()
+        end)
+    end
+end
+
+if SERVER then
+    net.receive('objLoader_clientReload', function(len, ply)
+        table.removeByValue(objLoader.CLIENTS, ply)
+        
+        print(ply:getName()..' [FULLY LOADED]')
+        
+        timer.create('PlayerCheckLoader', 5, 1, function()
+            for k, v in pairs(objLoader.CLIENTS) do
+                print(v:getName()..' [FAILED TO FULLY LOAD]')
+            end
+            objLoader.HandleMeshes()
+        end)
+    end)
+end
+
+return objLoader

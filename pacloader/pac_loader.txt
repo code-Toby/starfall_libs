@@ -1,0 +1,288 @@
+--@name pac_loader
+--@author {toby}
+--@shared
+
+--@include libs/pacloader/functions/obj_loader_v2.txt
+--@include libs/pacloader/functions/handle_materials.txt
+--@include libs/pacloader/functions/getboneid.txt
+
+--@include libs/pacloader/parts/model.txt
+--@include libs/pacloader/parts/clip.txt
+--@include libs/pacloader/parts/bone.txt
+--@include libs/pacloader/parts/particle.txt
+
+PAC_LOADER = {}
+
+PAC_LOADER.HOLOGRAMS = {}
+PAC_LOADER.GLOBAL_MESHES = {}
+PAC_LOADER.GLOBAL_MATERIALS = {}
+
+PAC_LOADER.CLIPIDS = 1
+PAC_LOADER.PAC_DATA = nil
+
+PAC_LOADER.CREATED_BONES = {}
+PAC_LOADER.BONE_NAMES = {
+    {"Anim_Attachment", "attach"},
+    {"RH", "right hand"},
+    {"LH", "left hand"},
+    {"_L_", " left "},
+    {"_R_", " right "},
+    {"%p", " "},
+    {"ValveBiped", ""},
+    {"Bip01", ""},
+    {"Neck1", "neck"},
+    {"Head1", "head"},
+    {"Toe0", "toe"},
+    {"lowerarm", "lower arm"},
+    {"Bip", ""},
+    {" R", " right"},
+    {" L", " left"},
+}
+
+PAC_LOADER.PLAYERSLOADED = {}
+PAC_LOADER.PLAYERSLOADED.MESHES = {}
+PAC_LOADER.PLAYERSLOADED.MATERIALS = {}
+
+PAC_LOADER.CREATED_PARTICLES = {}
+PAC_LOADER.PARTICLES_QUQUE = {}
+
+
+PAC_FUNCS = {}
+PAC_FUNCS.OBJLOADER = require('libs/pacloader/functions/obj_loader_v2.txt')
+PAC_FUNCS.HANDLE_MATERIALS = require('libs/pacloader/functions/handle_materials.txt')
+PAC_FUNCS.GET_BONEID = require('libs/pacloader/functions/getboneid.txt')
+-- PART LOADING --
+PAC_PARTS = {}
+PAC_PARTS.model = require('libs/pacloader/parts/model.txt')
+PAC_PARTS.clip = require('libs/pacloader/parts/clip.txt')
+PAC_PARTS.bone = require('libs/pacloader/parts/bone.txt')
+PAC_PARTS.particle_eff = require('libs/pacloader/parts/particle.txt')
+
+
+-- LIST
+
+-- MODEL [ almost done ]
+-- MATERTIAL
+-- CLIP [ DONE ]
+-- BONE [ DONE ]
+-- PARTICLE SUPPORT
+-- EFFECT SUPPORT
+-- TRAIL (maybe)
+-- PROXIES
+
+if CLIENT then -- fix for particle limit being sad
+    if player() == owner() then
+        concmd('sf_particleemitters_max_cl 10000000')
+        concmd('sf_particles_max 10000000')    
+    end 
+end
+
+------------------
+function PAC_LOADER.CREATE_PARTS(parts, parent, SCALE, OnFinished)
+    if SCALE == nil then
+        SCALE = 1 
+    end
+    
+    for _, part_data in pairs(parts) do
+        local holo = nil
+        local data = nil
+        local part_type = part_data['self']['ClassName']
+        
+        if string.startsWith(part_type, 'bone') then
+            PAC_PARTS.bone['Create'](part_data['self'], parent)
+        end
+        
+        if string.startsWith(part_type, 'model') then
+            data = PAC_PARTS.model['Create'](part_data['self'], parent, SCALE)
+            
+            holo = data[1]
+            
+            local isUrlTexture = false
+            if type(data[3]) == 'string' then
+                if string.startsWith(data[3], 'http') then
+                    isUrlTexture = true
+                end
+            end
+            
+            if table.count(data[2]) > 0 or isUrlTexture then
+                table.insert(PAC_LOADER.GLOBAL_MATERIALS, data)
+            end
+        end
+        
+        if string.startsWith(part_type, 'clip') then
+            PAC_PARTS.clip['Create'](part_data['self'], parent, SCALE)
+        end
+        
+        if string.startsWith(part_type, 'particles') then
+            
+            table.insert(PAC_LOADER.PARTICLES_QUQUE, {['part_data']=part_data['self'], ['parent']=parent, ['SCALE']=SCALE})
+        end
+        
+        PAC_LOADER.CREATE_PARTS(part_data['children'], holo, SCALE)
+    end
+    
+    if OnFinished then
+        OnFinished()
+        
+        timer.create('handle_dly', 0.1, 1, function()
+            PAC_FUNCS.OBJLOADER.HandleMeshes()
+            PAC_FUNCS.HANDLE_MATERIALS()
+            
+            net.start('pac_loader-CreateParticle')
+                net.writeTable(PAC_LOADER.PARTICLES_QUQUE)
+            net.send()
+        end)
+    end
+end
+
+function PAC_LOADER.SEND_PAC_FILE(filename)
+    if SERVER then
+        error('function needs to run in the client space!!')    
+    else
+        
+        PAC_FUNCS.OBJLOADER.HandleMeshes()
+        PAC_FUNCS.HANDLE_MATERIALS()
+        
+        net.receive('part_lod', function()
+            local part = net.readEntity():toHologram()
+            local lod = math.floor(net.readFloat(LOD))
+            
+            part:setLOD(lod)
+        end)
+        
+        if player() != owner() then return end
+        if not file.exists('pac_to_holo/') then
+            print('Missing pac_to_holo dir')
+            print('Creating pac_to_holo dir')
+            
+            file.createDir('pac_to_holo')
+            
+            print('Directory created you can now place your pac file in: ')
+            print('data/sf_filedata/pac_to_holo/')
+            print('happy loading :D')
+            
+            return
+        end
+        
+        if not file.exists('pac_to_holo/'..filename..'.txt')then
+            print('Missing File: '..filename..'.txt')
+            return
+        else
+            local pac_file = file.open('pac_to_holo/'..filename..'.txt', 'r')
+            local raw_data = pac_file:read()
+            local call, err = loadstring("return {"..raw_data.."}")
+            if call == nil then print("Failed to compile! Error: " .. err) return end
+            local data = call()
+            
+            net.start('sf_pac_netSend')
+                net.writeStream(json.encode(data))
+            net.send()
+        end
+    end 
+end
+
+function PAC_LOADER.LOAD_PAC_DATA(loaded_func)
+    net.receive('sf_pac_netSend', function()
+        net.readStream(function (cb)
+            if cb == nil then 
+                print('Data Returned NILL')
+                return 
+            else
+                PAC_LOADER.PAC_DATA = json.decode(cb)
+                loaded_func()
+            end
+        end)
+    end) 
+end
+
+function PAC_LOADER.LOAD_PAC(group_name, ent_to_parrent_to, SCALE, finished_func)
+    PAC_LOADER.HOLOGRAMS = {}
+    for _, group in pairs(PAC_LOADER.PAC_DATA) do
+        if group['self']['Name'] == group_name and group['self']['ClassName'] == "group" then
+            PAC_LOADER.CREATE_PARTS(group['children'], ent_to_parrent_to, SCALE, function() 
+                finished_func(PAC_LOADER.HOLOGRAMS)
+                
+            end)
+        end
+    end
+    
+    return PAC_LOADER.HOLOGRAMS
+end
+
+function PAC_LOADER.GET_PART(holograms, name)
+    local found_part = ''
+    local found_parts = {}
+    for k, v in pairs(holograms) do
+        if v['name'] == name then
+            table.insert(found_parts, v['part'])
+        end
+    end
+    
+    if table.count(found_parts) <= 1 then
+        return found_parts[1]
+    else
+        return found_parts
+    end
+end
+
+if CLIENT then
+    hook.add('think', 'PAC_LOADER_THINK_CL', function()
+        net.receive('pac_loader-CreateParticle', function()
+            local init_table = net.readTable()
+            for k, v in pairs(init_table) do  
+                local part_data = v.part_data
+                local parent = v.parent
+                local SCALE = v.SCALE  
+                
+                PAC_PARTS.particle_eff['Create'](part_data, parent, SCALE)                
+            end
+        end)
+    end)
+
+    PAC_LOADER.PLAY_PARTICLE_EFF = function(Eff_Name)
+        timer.create('PAC_LOADER_PARTICLE_'..Eff_Name, 0, 0, function()
+            for _, ParticleEffect in pairs(PAC_LOADER.CREATED_PARTICLES) do
+                
+                local Parent = ParticleEffect.Parent
+                local ParticleEmitter = ParticleEffect.ParticleEmitter
+                local Data = ParticleEffect.Data
+                local SCALE = ParticleEffect.SCALE
+                
+                if Parent == nil then return end
+                if ParticleEmitter == nil then return end
+                if Data == nil then return end
+                
+                if Eff_Name == Data.Name then
+                    for i=1, Data.NumberParticles do
+                        if ParticleEmitter:getParticlesLeft() >= Data.NumberParticles then
+                            --ParticleEmitter:setPos(Parent:getPos())
+                                
+                            local x = math.random(-(Data.PositionSpread+Data.PositionOffset[1]), (Data.PositionSpread+Data.PositionOffset[1]))
+                            local y = math.random(-(Data.PositionSpread+Data.PositionOffset[2]), (Data.PositionSpread+Data.PositionOffset[2]))
+                            local z = math.random(-(Data.PositionSpread+Data.PositionOffset[3]), (Data.PositionSpread+Data.PositionOffset[3]))
+                                
+                            local particle_eff = ParticleEmitter:add(Data.Material, Parent:localToWorld((Data.Position+Vector(x,y,z))*SCALE), Data.StartSize*SCALE, Data.EndSize*SCALE, Data.StartLength*SCALE, Data.EndLength*SCALE, Data.StartAlpha, Data.EndAlpha, Data.DieTime)
+                            particle_eff:setGravity(Data.Gravity*SCALE)
+                            particle_eff:setColor(Color(Data.Color1[1],Data.Color1[2],Data.Color1[3]))
+                            particle_eff:setLighting(Data.Lighting)
+                            particle_eff:setVelocity(Parent:localToWorldAngles(Data.Angles):getForward() * (Data.Velocity*SCALE))
+                            particle_eff:setAngles(Parent:localToWorldAngles(Data.Angles))
+                            particle_eff:setAirResistance(Data.AirResistance)
+                        end
+                    end
+                end
+            end
+        end)
+    end
+    
+    PAC_LOADER.PAUSE_PARTICLE_EFF = function(Eff_Name)
+        if timer.exists('PAC_LOADER_PARTICLE_'..Eff_Name) then  
+            timer.pause('PAC_LOADER_PARTICLE_'..Eff_Name)
+        end
+    end
+end
+
+
+
+return PAC_LOADER
+--return {['send_pac_file']=send_pac_file,['load_pac']=load_pac, ['load_pac_data']=load_pac_data}

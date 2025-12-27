@@ -1,0 +1,26 @@
+--@name getBoneId
+--@author {toby}
+--@shared
+
+function getBoneId(parent, bone_name)
+    for bone=0, parent:getBoneCount() do
+        local name = parent:getBoneName(bone)
+        local friendly = name
+        
+        if name then
+            for _, value in pairs(PAC_LOADER.BONE_NAMES) do
+                friendly = friendly:gsub(value[1], value[2])
+            end
+        end
+    
+        friendly = friendly:trim():lower():gsub("(.-)(%d+)", "%1 %2")
+        
+        if friendly == bone_name then
+            return bone
+        end
+    end
+    
+    return nil
+end
+
+return getBoneId
