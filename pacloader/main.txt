@@ -6,7 +6,7 @@
 --@include classes/clip.txt
 
 pacloader = {}
-pacloader.debug_prints = true
+pacloader.debug_prints = false
 pacloader.default_path = 'pac3/'
 pacloader.LoadedPacs = {}
 
@@ -204,7 +204,6 @@ hook.add('Net', 'pacloader_net', function(name, len, ply)
             end
             
             pacloader.LoadedPacs[filename] = json.decode(data)
-            print(pacloader.LoadedPacs[filename])
         end
     end
     
