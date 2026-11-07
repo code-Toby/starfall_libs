@@ -1,0 +1,74 @@
+--@name model part
+--@author {toby}
+--@shared
+
+function pacloader:CREATE_MODEL_PART(DATA, PARENT, SCALE)
+    --[[
+                                      /  Skin    =    0
+                                        UniqueID    =    9e10ab049ab42ce1fe22391b08dc4d0e0bb3235caebb5505026dc6bb522e72ab
+                                      /  NoLighting    =    true
+                                        AimPartName    =    
+                                        IgnoreZ    =    false
+                                        AimPartUID    =    
+                                        Notes    =    
+                                        Materials    =    
+                                        Name    =    
+                                        LevelOfDetail    =    0
+                                        ClassName    =    model2
+                                        PositionOffset    =    0 0 0
+                                        IsDisturbing    =    false
+                                        EyeAngles    =    false
+                                        DrawOrder    =    0
+                                        TargetEntityUID    =    
+                                      /  Alpha    =    1
+                                      /  Material    =    
+                                        Model    =    models/pac/default.mdl
+                                        ForceObjUrl    =    false
+                                        Bone    =    head
+                                      /  Color    =    1 0 0
+                                        AngleOffset    =    0 0 0
+                                        BoneMerge    =    false
+                                      /  Angles    =    0 0 0
+                                      /  Position    =    0 0 0
+                                        LegacyTransform    =    false
+                                      /  Invert    =    true
+                                      /  Hide    =    false
+                                        Brightness    =    1
+                                      /  Scale    =    1.8999999761581 1 1
+                                        NoCulling    =    false
+                                        EditorExpand    =    false
+                                      /  Size    =    0.975
+                                        Translucent    =    false
+                                        BlendMode    =    
+                                        ModelModifiers    =    
+                                        EyeTargetUID    =    
+                                        NoTextureFiltering    =    false
+    --]]
+    local part = hologram.create(Vector(0,0,0), Angle(), 'models/pac/default.mdl', (DATA['Scale'] * DATA['Size']) * SCALE)
+    part:setParent(PARENT)
+    part:setLocalPos(DATA['Position'] * SCALE)
+    part:setLocalAngles(DATA['Angles'])
+    part:setMaterial(DATA['Material'])
+    
+    
+    if game.modelExists(DATA['Model']) then
+        part:setModel(DATA['Model'])
+    end
+    part:setSkin(DATA['Skin'])
+    part:suppressEngineLighting(DATA['NoLighting'])
+    
+    if DATA['Invert'] then
+        part:setCullMode(1)
+    end
+    
+    local R = DATA['Color'][1] * 255
+    local G = DATA['Color'][2] * 255
+    local B = DATA['Color'][3] * 255
+    local A = DATA['Alpha'] * 255
+    part:setColor(Color(R,G,B,A))
+
+    
+    return part
+end
+
+return

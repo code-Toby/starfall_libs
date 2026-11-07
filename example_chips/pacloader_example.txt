@@ -1,0 +1,21 @@
+--@name pacloader_example
+--@author {toby}
+--@shared
+--@include libs/pacloader/main.txt
+
+
+local pacLoader = require('libs/pacloader/main.txt')
+pacLoader:loadfile('example') -- pac path file
+
+if SERVER then
+    -- pacLoader:applypac(pac path, start_group, parent, scale, onfinishedFunc)    
+    pacLoader:applypac('example', 'my outfit', chip(), 1, function(pac)
+        
+        --pacloader:getPart(pac table, group to look in, part name to find or uniqueID)
+            -- returns table of holograms if multible of the same part in the group
+            -- returns hologram if theres only one
+        pacloader:getPart(pac, 'my outfit', 'default')
+    end)
+
+
+end

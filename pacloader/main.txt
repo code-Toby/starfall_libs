@@ -1,0 +1,216 @@
+--@name pacloader-main
+--@author {toby}
+--@shared
+
+--@include classes/model.txt
+--@include classes/clip.txt
+
+pacloader = {}
+pacloader.debug_prints = true
+pacloader.default_path = 'pac3/'
+pacloader.LoadedPacs = {}
+
+pacloader.tempholograms = {}
+pacloader.allholos = {}
+
+require('classes/model.txt')
+require('classes/clip.txt')
+
+function net.writeCompressedString(s)
+    local comp = bit.compress(s)
+    local bytes = #comp 
+    
+    net.writeUInt(bytes, 16)
+    net.writeData(comp, bytes)
+end
+
+function net.readCompressedString()
+    local bytes = net.readUInt(16)
+    local comp = net.readData(bytes)
+    
+    return bit.decompress(comp)
+end
+
+function pacloader:loadfile(filename)
+    if CLIENT then
+        if player() != owner() then return end
+        if file.exists(self.default_path) then
+            if file.exists(self.default_path..filename..'.txt') then
+                local pac_file = file.open(self.default_path..filename..'.txt', 'r')
+                local raw_data = pac_file:read()
+                local call, err = loadstring("return {"..raw_data.."}")
+                local data = call()
+                
+                local checksum = bit.sha256(raw_data)
+                
+                if not file.exists(self.default_path..'cache/') then
+                    print('missing cache directory!')
+                    print('creating one!')
+                    
+                    file.createDir(self.default_path..'cache/')
+                    
+                    print('created one at: sf_filedata/'..self.default_path..'cache/')
+                end
+                
+                if file.exists(self.default_path..'cache/'..checksum..'.json') then
+                    --net the file
+                    local filedata = file.read(self.default_path..'cache/'..checksum..'.json')
+                    if self.debug_prints then
+                        print('loading cache file: '..self.default_path..'cache/'..checksum..'.json')
+                    end
+                    net.start('pacloader_sendFile')
+                        net.writeCompressedString(filedata)
+                        net.writeString(filename)
+                    net.send()
+                else
+                    --net the file and cache
+                    local filedata = json.encode(data, false)
+                    
+                    file.write(self.default_path..'cache/'..checksum..'.json', filedata)
+                    if self.debug_prints then
+                        print('writing cache file: '..self.default_path..'cache/'..checksum..'.json')
+                    end
+                    net.start('pacloader_sendFile')
+                        net.writeCompressedString(filedata)
+                        net.writeString(filename)
+                    net.send()
+                end
+            else
+                print('couldnt find file at: '..self.default_path..filename..'.txt')
+            end
+        else
+            print('missing main directory!')
+            print('creating one!')
+            
+            file.createDir(self.default_path)
+            file.createDir(self.default_path..'cache/')
+            
+            print('created one at: sf_filedata/'..self.default_path)
+        end
+    end
+end
+
+function pacloader:CREATEPART(data, group, parent, scale, onCompleted)
+    if onCompleted then
+        self.tempholograms = {
+                [group] = {}
+            }
+    end
+    
+    for k, v in pairs(data) do
+        if v['self']['ClassName'] == 'group' then
+            if table.count(v['children']) > 0 and v['self']['Hide'] == false then
+                self.tempholograms[v['self']['Name']] = {}
+                self:CREATEPART(v['children'], v['self']['Name'], parent, scale)
+            end
+        elseif v['self']['ClassName'] == 'model2' then
+            
+            local part = self:CREATE_MODEL_PART(v['self'], parent, scale)
+            
+            table.insert(self.allholos, part)
+            
+            if string.len(v['self']['Name']) > 0 then
+                local partName = v['self']['Name']
+                table.insert(self.tempholograms[group], {['Name'] = partName, ['Part'] = part})
+            else
+                local partName = v['self']['UniqueID']
+                table.insert(self.tempholograms[group], {['Name'] = partName, ['Part'] = part})
+            end
+            
+            if table.count(v['children']) > 0 and v['self']['Hide'] == false then
+                self:CREATEPART(v['children'], group, part, scale)
+            end
+        elseif v['self']['ClassName'] == 'clip2' then
+            self:CREATE_CLIP_PART(v['self'], parent, scale)
+        end
+    end
+    
+    if onCompleted then
+        onCompleted(self.tempholograms)
+    end
+end
+
+function pacloader:applypac(pac_name, start_group, ent, scale, onFinished)
+    if SERVER then
+        local ad = table.address({pac_name})
+        local data = nil
+        local foundGroup = false
+        timer.create(ad..'_pacDataCheck', 0, 0, function()
+            if self.LoadedPacs[pac_name] == nil then return end
+
+            for k, v in pairs(self.LoadedPacs[pac_name]) do
+                if v['self']['ClassName'] == 'group' and v['self']['Name'] == start_group then
+                    data = v
+                end
+            end
+
+
+            if data == nil then
+                print('Couldnt find group: '..start_group)
+                
+                print('START GROUPS:')
+                
+                for k, v in pairs(self.LoadedPacs[pac_name]) do
+                    if v['self']['ClassName'] == 'group' then
+                        print(v['self']['Name'])
+                    end
+                end
+                
+                if timer.exists(ad..'_pacDataCheck') then
+                    timer.remove(ad..'_pacDataCheck')
+                end
+            else
+                self:CREATEPART(data['children'], start_group, ent, scale, onFinished)
+                
+                if timer.exists(ad..'_pacDataCheck') then
+                    timer.remove(ad..'_pacDataCheck')
+                end
+            end
+        end)
+    else
+        
+    end
+end
+
+function pacloader:getPart(pac_tbl, groupName, partname)
+    local listOfparts = {}
+    for group, v in pairs(pac_tbl) do
+        if group == groupName then
+            for _, PART in pairs(v) do
+                
+                if PART['Name'] == partname then
+                    table.insert(listOfparts, PART['Part'])
+                end
+            end
+        end
+    end
+    
+    
+    if #listOfparts > 1 then
+        return listOfparts
+    end
+    
+    return listOfparts[1]
+end
+
+hook.add('Net', 'pacloader_net', function(name, len, ply)
+    if SERVER then
+        if name == 'pacloader_sendFile' then -- handle file data 
+            local data = net.readCompressedString()
+            local filename = net.readString()
+            
+            if pacloader.debug_prints then
+                print('recived data for: '..filename)
+            end
+            
+            pacloader.LoadedPacs[filename] = json.decode(data)
+            print(pacloader.LoadedPacs[filename])
+        end
+    end
+    
+    if CLIENT then
+        
+    end
+end)
+
+return pacloader

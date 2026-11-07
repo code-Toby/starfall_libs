@@ -1,0 +1,15 @@
+--@name clip part
+--@author {toby}
+--@shared
+
+pacloader.CLIPINDEX = 1
+
+function pacloader:CREATE_CLIP_PART(DATA, PARENT, SCALE)
+    local position = (DATA['Position'] * SCALE)
+    local angle = DATA['Angles']
+
+    PARENT:setClip(pacloader.CLIPINDEX, true, position, angle:getForward(), PARENT)
+    pacloader.CLIPINDEX = pacloader.CLIPINDEX + 1
+end
+
+return
