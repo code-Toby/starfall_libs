@@ -100,7 +100,10 @@ function pacloader:CREATEPART(data, group, parent, scale, onCompleted)
     for k, v in pairs(data) do
         if v['self']['ClassName'] == 'group' then
             if table.count(v['children']) > 0 and v['self']['Hide'] == false then
-                self.tempholograms[v['self']['Name']] = {}
+                if self.tempholograms[v['self']['Name']] == nil then
+                    self.tempholograms[v['self']['Name']] = {}
+                end
+                
                 self:CREATEPART(v['children'], v['self']['Name'], parent, scale)
             end
         elseif v['self']['ClassName'] == 'model2' then
@@ -191,6 +194,18 @@ function pacloader:getPart(pac_tbl, groupName, partname)
     end
     
     return listOfparts[1]
+end
+
+function pacloader:getPartsInGroup(pac_tbl, groupName)
+        local listOfparts = {}
+        for group, v in pairs(pac_tbl) do
+            if group == groupName then
+                for _, PART in pairs(v) do
+                    table.insert(listOfparts, PART['Part'])
+                end
+            end
+        end
+    return listOfparts
 end
 
 hook.add('Net', 'pacloader_net', function(name, len, ply)
