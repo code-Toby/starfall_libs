@@ -15,6 +15,10 @@ if SERVER then
             -- returns table of holograms if multible of the same part in the group
             -- returns hologram if theres only one
         pacloader:getPart(pac, 'my outfit', 'default')
+        
+        --pacloader:getPartsInGroup(pac table, group name or groups with the same names)
+            --returns table of holograms
+        pacloader:getPartsInGroup(pac_tbl, 'my outfit')
     end)
 
 
